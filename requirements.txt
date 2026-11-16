@@ -1,0 +1,6 @@
+# System packages (Ubuntu 20.04/22.04):
+#   sudo apt install -y mininet openvswitch-switch python3-psutil python3-matplotlib
+# Ryu goes into its own venv (Python 3.8-3.10):
+#   python3 -m venv ~/ryu-venv && ~/ryu-venv/bin/pip install "setuptools<68" wheel eventlet==0.30.2 ryu
+psutil
+matplotlib
