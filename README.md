@@ -56,19 +56,58 @@ Design points: `TCP_NODELAY`; one coroutine per connection; per-subscriber queue
 5. **Failover** – OpenFlow port-status events mark core ports down; classes **and** the default route leave the dead path immediately.
 6. `PUBSUB_MODE=static` keeps the same initial rules but **never changes them** – this is the baseline for the performance comparison.
 
-## 3. Prerequisites (Ubuntu 20.04 / 22.04 VM, as in the Mininet manual)
+## 3. Prerequisites
+
+Tested environment:
+- Ubuntu 26.04 LTS (VirtualBox VM)
+- System Python 3.14.4
+- Ryu 4.34 running in a dedicated Python 3.9.25 virtual environment
+- Mininet 2.3.0
+- Open vSwitch 3.7.1
+
+Install the required system packages:
+
 ```bash
-sudo apt update && sudo apt install -y mininet openvswitch-switch python3-pip python3-venv git \
-                                       python3-psutil python3-matplotlib iperf
-sudo systemctl enable --now openvswitch-switch
-# Ryu in its own venv (Python 3.8-3.10; Ryu does NOT work on Python 3.12)
-python3 -m venv ~/ryu-venv
-~/ryu-venv/bin/pip install "setuptools<68" wheel
-~/ryu-venv/bin/pip install eventlet==0.30.2 ryu
-~/ryu-venv/bin/ryu-manager --version          # must print a version
-sudo mn --test pingall                         # Mininet sanity check (0% dropped)
+sudo apt update
+sudo apt install -y mininet openvswitch-switch python3-pip python3-venv git \
+                    python3-psutil python3-matplotlib iperf
 ```
-Clone/copy this project, then `cd pubsub-sdn` for every command below.
+
+Enable Open vSwitch:
+
+```bash
+sudo systemctl enable --now openvswitch-switch
+```
+
+Ryu runs in a separate virtual environment using Python 3.9:
+
+```bash
+~/ryu-venv/bin/python --version
+~/ryu-venv/bin/ryu-manager --version
+```
+
+Expected versions:
+
+```text
+Python 3.9.25
+ryu-manager 4.34
+```
+
+Verify Mininet and Open vSwitch:
+
+```bash
+mn --version
+ovs-vsctl --version
+```
+
+Expected versions:
+
+```text
+2.3.0
+Open vSwitch 3.7.1
+```
+
+**Note:** Use system Python for the project, tests and experiment scripts. Use `~/ryu-venv/bin/ryu-manager` to launch the SDN controller. Do not mix the Ryu virtual environment with the system Python environment.
 
 ## 4. How to generate the output
 
@@ -77,8 +116,7 @@ Clone/copy this project, then `cd pubsub-sdn` for every command below.
 python3 -m unittest tests.test_local tests.test_policy -v      # 14 tests, all OK
 ```
 
-### Step 1 – application only, on localhost (3 terminals) → screenshot for slide 11
-```bash
+### Step 1 – application only, on localhost (3 terminals) → screenshot for slid```bash
 python3 src/broker.py                                                       # T1
 python3 src/subscriber.py --id sub-1 --topics sports news                   # T2
 python3 src/publisher.py --id pub-1 --topic sports --message "India won!"   # T3
@@ -130,13 +168,80 @@ python3 analysis/analyze.py results/compare/dynamic_failure     # prints metrics
 ```
 Paste `summary_scale.csv` values into the slide-13 table and replace the illustrative output on slide 11 with a real screenshot.
 
-## 5. What to expect (qualitative – numbers depend on your VM)
-| Scenario | static baseline | dynamic SDN |
-|---|---|---|
-| normal | low latency, ~100 % delivery | same (no unnecessary moves) |
-| congestion (9.5 Mbps UDP on path A) | sports/news latency grows by queueing delay (up to ~100 packets × 10 Mbps) | controller moves busiest classes to B within a few seconds; latency drops back |
-| failure (s2–s4 down 20 s) | sports/news stall until link returns + TCP back-off | classes switch to B right after port-status event; short dip only |
+## 5. Experimental Results and Analysis
 
+Experiments were conducted using Mininet, Open vSwitch and the Ryu SDN controller to evaluate the performance of static and dynamic routing under normal conditions, network congestion and link failure. Additional scalability experiments evaluated the system under different workloads.
+
+### 5.1 Static vs Dynamic Routing Comparison
+
+The comparison experiment used 6 publishers, 6 subscribers, 3 topics and a message rate of 100 messages/sec.
+
+| Network Scenario | Static Mean Latency (ms) | Dynamic Mean Latency (ms) | Delivery Ratio |
+|---|---:|---:|---:|
+| Normal | 8.841 | 12.252 | 100% |
+| Congestion | 173.182 | 36.096 | 100% |
+| Link Failure | 6764.499 | 11.908 | 100% |
+
+**Observations:**
+
+- Normal conditions: Static routing achieved slightly lower latency because it does not require dynamic route management.
+- Congestion: Dynamic routing reduced mean latency by approximately 79.2% compared with static routing.
+- Link failure: Dynamic routing reduced mean latency by approximately 99.82%, demonstrating effective failover through the alternate path.
+- All six comparison configurations achieved 100% message delivery.
+
+These results demonstrate that dynamic SDN routing provides significant benefits under congestion and link-failure conditions, although it introduces some overhead during normal operation.
+
+### 5.2 Scalability Evaluation
+
+Five scalability experiments (E1–E5) were conducted to evaluate system behaviour as workload parameters increased. The full experiment included 23 configurations.
+
+| Experiment | Parameter | Maximum Tested Value | Mean Latency (ms) | Delivery Ratio |
+|---|---|---:|---:|---:|
+| E1 | Publishers | 50 | 10.633 | 100% |
+| E2 | Subscribers | 50 | 15.996 | 100% |
+| E3 | Concurrent Connections | 500 | 22.738 | 100% |
+| E4 | Topics | 50 | 10.871 | 100% |
+| E5 | Message Rate | 1000 msg/s | 8.815 | 100% |
+
+**Additional performance observations:**
+
+- Maximum measured throughput: 8331.76 messages/sec at 500 concurrent connections.
+- Maximum measured CPU utilization: 34.3%.
+- Maximum measured memory usage: 30.8 MB.
+- Lowest measured mean latency: 8.072 ms at 25 topics.
+
+All 23 configurations in the full scalability experiment achieved a 100% delivery ratio.
+
+### 5.3 Performance Analysis
+
+The experiments demonstrate the following:
+
+1. **Dynamic routing:** The controller can respond to congestion and link failures by moving traffic to an alternate path.
+2. **Reliability:** All tested comparison and scalability configurations achieved 100% message delivery.
+3. **Scalability:** The system successfully handled experiments involving up to 500 concurrent connections.
+4. **Topic management:** The system maintained message delivery while testing up to 50 topics.
+5. **Load handling:** The system was tested at message rates up to 1000 messages/sec.
+
+The measurements are specific to the experimental VM and network configuration. Performance may vary on different hardware and network environments.
+
+### 5.4 Generated Performance Graphs
+
+The following figures were generated using `analysis/plot_results.py` and are available in `results/figures/`.
+
+| Figure | Description |
+|---|---|
+| `compare_bars.png` | Static vs dynamic routing comparison |
+| `timeseries_congestion.png` | Latency behaviour during congestion |
+| `timeseries_failure.png` | Latency behaviour during link failure |
+| `scale_E1_publishers.png` | Publisher scalability |
+| `scale_E2_subscribers.png` | Subscriber scalability |
+| `scale_E3_connections.png` | Concurrent connection scalability |
+| `scale_E4_topics.png` | Topic scalability |
+| `scale_E5_msg_rate.png` | Message-rate scalability |
+
+Raw experimental measurements are available in:
+- `results/summary_compare.csv`
+- `results/summary_scale.csv`
 ## 6. Rubric / requirement mapping
 | Rubric item | Where |
 |---|---|
