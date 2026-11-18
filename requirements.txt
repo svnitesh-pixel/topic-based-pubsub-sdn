@@ -4,3 +4,4 @@
 #   python3 -m venv ~/ryu-venv && ~/ryu-venv/bin/pip install "setuptools<68" wheel eventlet==0.30.2 ryu
 psutil
 matplotlib
+Flask>=3.0

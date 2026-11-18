@@ -127,7 +127,7 @@ Broker prints connect / SUBSCRIBE / PUBLISH / matching subscribers / routing lat
 ### Step 2 – manual demo inside Mininet + SDN
 ```bash
 # Terminal A – controller (leave running)
-source ~/ryu-venv/bin/activate && ryu-manager sdn/ryu_pubsub_controller.py
+source ~/ryu-venv/bin/activate && ryu-manager --ofp-tcp-listen-port 6653 sdn/ryu_pubsub_controller.py
 # Terminal B – network
 sudo mn -c && sudo python3 mn/topology.py
 mininet> pingall                              # 6 hosts; 0% dropped (ARP proxy + proactive flows)
